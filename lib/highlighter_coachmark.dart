@@ -90,6 +90,7 @@ class CoachMark {
     BoxShape markShape = BoxShape.circle,
     Duration duration,
     VoidCallback onClose,
+    bool dismissable,
   }) async {
     // Prevent from showing multiple marks at the same time
     if (_isVisible) {
@@ -105,13 +106,16 @@ class CoachMark {
     _overlayEntryBackground = _overlayEntryBackground ??
         new OverlayEntry(
           builder: (BuildContext context) => new _HighlighterCoachMarkWidget(
-                key: globalKey,
-                bgColor: bgColor,
-                markRect: markRect,
-                markShape: markShape,
-                doClose: close,
-                children: children,
-              ),
+            key: globalKey,
+            bgColor: bgColor,
+            markRect: markRect,
+            markShape: markShape,
+            doClose: () {},
+            children: children,
+            onTargetHit: () {
+              close();
+            },
+          ),
         );
 
     OverlayState overlayState = Overlay.of(targetContext);
@@ -146,13 +150,16 @@ class _HighlighterCoachMarkWidget extends StatefulWidget {
     @required this.children,
     @required this.doClose,
     @required this.bgColor,
+    @required this.onTargetHit,
   }) : super(key: key);
 
   final Rect markRect;
   final BoxShape markShape;
   final List<Widget> children;
+  // Hit the target?
   final VoidCallback doClose;
   final Color bgColor;
+  final VoidCallback onTargetHit;
 
   @override
   _HighlighterCoachMarkState createState() => new _HighlighterCoachMarkState();
@@ -232,6 +239,7 @@ class _HighlighterCoachMarkState extends State<_HighlighterCoachMarkWidget>
                 onPointerMove: _onPointer,
                 onPointerUp: _onPointer,
                 onPointerCancel: _onPointer,
+                onTargetHit: widget.onTargetHit,
                 markPosition: position,
                 child: CustomPaint(
                   child: Opacity(
@@ -246,7 +254,7 @@ class _HighlighterCoachMarkState extends State<_HighlighterCoachMarkWidget>
                     rect: position,
                     shadow: BoxShadow(
                         color:
-                            widget.bgColor.withOpacity(_opacityAnimation.value),
+                        widget.bgColor.withOpacity(_opacityAnimation.value),
                         blurRadius: 8.0),
                     clipper: clipper,
                     coachMarkShape: widget.markShape,
@@ -268,22 +276,82 @@ class _HighlighterCoachMarkState extends State<_HighlighterCoachMarkWidget>
 class _CoachMarkLayer extends Listener {
   const _CoachMarkLayer(
       {Key key,
-      onPointerDown,
-      onPointerMove,
-      onPointerUp,
-      onPointerCancel,
-      behavior,
-      this.markPosition,
-      Widget child})
-      : super(
-            key: key,
-            onPointerDown: onPointerDown,
-            onPointerMove: onPointerMove,
-            onPointerUp: onPointerUp,
-            onPointerCancel: onPointerCancel,
-            child: child);
+        onPointerDown,
+        onPointerMove,
+        onPointerUp,
+        onPointerCancel,
+        behavior,
+        this.markPosition,
+        this.onTargetHit,
+        Widget child})
+      : _child = child, super(
+      key: key,
+      onPointerDown: onPointerDown,
+      onPointerMove: onPointerMove,
+      onPointerUp: onPointerUp,
+      onPointerCancel: onPointerCancel,
+      child: child);
 
   final Rect markPosition;
+  final VoidCallback onTargetHit;
+
+  final Widget _child;
+  @override
+  Widget build(BuildContext context) {
+    Widget result = _child;
+    if (onPointerEnter != null ||
+        onPointerExit != null ||
+        onPointerHover != null) {
+      result = MouseRegion(
+        onEnter: onPointerEnter,
+        onExit: onPointerExit,
+        onHover: onPointerHover,
+        opaque: false,
+        child: result,
+      );
+    }
+    result = _PointerListener(
+      onPointerDown: onPointerDown,
+      onPointerUp: onPointerUp,
+      onPointerMove: onPointerMove,
+      onPointerCancel: onPointerCancel,
+      onPointerSignal: onPointerSignal,
+      behavior: behavior,
+      child: result,
+      markPosition: markPosition,
+      onTargetHit: onTargetHit,
+    );
+    return result;
+  }
+
+
+}
+
+class _PointerListener extends SingleChildRenderObjectWidget {
+  const _PointerListener({
+    Key key,
+    this.onPointerDown,
+    this.onPointerMove,
+    this.onPointerUp,
+    this.onPointerCancel,
+    this.onPointerSignal,
+    this.behavior = HitTestBehavior.deferToChild,
+    this.markPosition,
+    this.onTargetHit,
+    Widget child,
+  }) : assert(behavior != null),
+        super(key: key, child: child);
+
+  final Rect markPosition;
+  final PointerDownEventListener onPointerDown;
+  final PointerMoveEventListener onPointerMove;
+  final PointerUpEventListener onPointerUp;
+  final PointerCancelEventListener onPointerCancel;
+  final PointerSignalEventListener onPointerSignal;
+  final HitTestBehavior behavior;
+
+  final VoidCallback onTargetHit;
+
 
   @override
   RenderPointerListener createRenderObject(BuildContext context) {
@@ -294,6 +362,7 @@ class _CoachMarkLayer extends Listener {
       onPointerCancel: onPointerCancel,
       behavior: behavior,
       exceptRegion: markPosition,
+      onTargetHit: onTargetHit,
     );
   }
 
@@ -316,27 +385,30 @@ class _CoachMarkLayer extends Listener {
 class _RenderPointerListenerWithExceptRegion extends RenderPointerListener {
   _RenderPointerListenerWithExceptRegion(
       {onPointerDown,
-      onPointerMove,
-      onPointerUp,
-      onPointerCancel,
-      HitTestBehavior behavior,
-      this.exceptRegion,
-      RenderBox child})
+        onPointerMove,
+        onPointerUp,
+        onPointerCancel,
+        HitTestBehavior behavior,
+        this.exceptRegion,
+        this.onTargetHit,
+        RenderBox child})
       : super(
-            onPointerDown: onPointerDown,
-            onPointerMove: onPointerMove,
-            onPointerUp: onPointerUp,
-            onPointerCancel: onPointerCancel,
-            behavior: behavior,
-            child: child);
+      onPointerDown: onPointerDown,
+      onPointerMove: onPointerMove,
+      onPointerUp: onPointerUp,
+      onPointerCancel: onPointerCancel,
+      behavior: behavior,
+      child: child);
 
   final Rect exceptRegion;
+  final VoidCallback onTargetHit;
 
   @override
   bool hitTest(HitTestResult result, {Offset position}) {
     bool hitTarget = false;
     if (exceptRegion.contains(position)) {
       result.add(new BoxHitTestEntry(this, position));
+      onTargetHit();
       return false;
     }
     if (size.contains(position)) {
